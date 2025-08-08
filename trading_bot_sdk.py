@@ -1235,8 +1235,9 @@ async def start_token_listener_with_logging(duration_seconds: int = 21600, log_f
         if not task.done():
             return f"Token listener already running for {log_file}. Use stop_token_listener() to stop it."
     
-    # Load existing tokens if file exists
-    log_path = Path(log_file)
+    # Create absolute path relative to script location
+    script_dir = Path(__file__).parent
+    log_path = script_dir / log_file if not Path(log_file).is_absolute() else Path(log_file)
     existing_tokens = []
     if log_path.exists():
         try:
@@ -1350,7 +1351,9 @@ async def read_logged_tokens(log_file: str = "new_tokens.json", hours_ago: int =
     import time
     from pathlib import Path
     
-    log_path = Path(log_file)
+    # Create absolute path relative to script location
+    script_dir = Path(__file__).parent
+    log_path = script_dir / log_file if not Path(log_file).is_absolute() else Path(log_file)
     if not log_path.exists():
         return f"Log file {log_file} does not exist"
     
@@ -1387,7 +1390,9 @@ async def analyze_logged_tokens_bonding_curves(log_file: str = "new_tokens.json"
     import time
     from pathlib import Path
     
-    log_path = Path(log_file)
+    # Create absolute path relative to script location
+    script_dir = Path(__file__).parent
+    log_path = script_dir / log_file if not Path(log_file).is_absolute() else Path(log_file)
     if not log_path.exists():
         return f"Log file {log_file} does not exist"
     
@@ -1468,7 +1473,9 @@ async def execute_trading_strategy(hours_ago: int = 1, buy_amount: float = 0.001
     from pathlib import Path
     
     log_file = "new_tokens.json"
-    log_path = Path(log_file)
+    # Create absolute path relative to script location
+    script_dir = Path(__file__).parent
+    log_path = script_dir / log_file if not Path(log_file).is_absolute() else Path(log_file)
     
     if not log_path.exists():
         return f"No token log file found. Run start_token_listener_with_logging first."
