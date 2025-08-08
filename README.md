@@ -16,7 +16,7 @@ A complete MCP (Model Context Protocol) server for automated pump.fun token trad
 ### 1. Clone and Install Dependencies
 
 ```bash
-git clone <your-repo-url>
+git clone https://github.com/gabinfay/AlgoPump
 cd claude-code-mcp-pump
 
 # Create virtual environment in pump-fun-bot directory
