@@ -1,0 +1,22 @@
+[
+  {
+    "mint": "6BZyh9WH8SN7pF19xRjpr1QuAyhvWM7oUb3J8UBtrfiQ",
+    "symbol": "ed",
+    "name": "eggplant dildo",
+    "creator": "DBp4BCGTDhRWWQGNdqUNE51m3CQ5s9x7WTLPNpH9GTMF",
+    "bonding_curve": "CQkTqjSw4VSnLRN2R6JM2XW8n9r33i81VFFb7kjnmEWW",
+    "associated_bonding_curve": "9XaQroAKSkFrfz6hRdQr5RcssHWaaMqtLj8WXLXbNEp2",
+    "timestamp": 1754631881,
+    "platform": "pump_fun"
+  },
+  {
+    "mint": "Db52jaicKYiddqnxkTRKB67wExFb2UrRNmNnzQkVPump",
+    "symbol": "KWAUDE",
+    "name": "kwaude",
+    "creator": "2Yi2xEeyJWtjMWyqjciea7V4LHtf8NzzKM9xoDtrY3ok",
+    "bonding_curve": "GWfdfkCzyGtrzf1PMpewjQpprWgBM4MdTezgXKrMKLp5",
+    "associated_bonding_curve": "6Kgh8frchWzkpiD4zsSYRztBX1PmHBeTxd52QGeyvN7S",
+    "timestamp": 1754631888,
+    "platform": "pump_fun"
+  }
+]

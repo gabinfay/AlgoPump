@@ -1,0 +1,32 @@
+[
+  {
+    "mint": "6r4fXVACiZkJoMZYTdzvDcGCVxhXyoWbf6ScBqxSMgCc",
+    "symbol": "IFB",
+    "name": "IBIZA FINAL BOSS",
+    "creator": "GHSaT6kVN9aoRfHrCSfjzqiMjg315dMPQyQuFsnk2mcH",
+    "bonding_curve": "DfXSVpWFPfsXW8ciim46AYYXhA7uP8cxFMgrFbJnwVGH",
+    "associated_bonding_curve": "3zhYctPyvCfRE5HgyZyaUXiJMm3uzdHQzoVvKhAdmbSd",
+    "timestamp": 1754633881,
+    "platform": "pump_fun"
+  },
+  {
+    "mint": "BSS18hfrPgN6sxRW8PA8uPBK26i5PSC5mUKKz3ocpump",
+    "symbol": "bizcoin",
+    "name": "4Chan's First Coin",
+    "creator": "Adz2iUVUceTh1rPjTPsjr8ptxBBAJjLRtuYCGA4sFNPL",
+    "bonding_curve": "2BLJnZdJHBMjcQXD8FMSTyhpZtNr9ibcDUr8vEm4kYc7",
+    "associated_bonding_curve": "4Vee9ivKVmN1P3aJmFgxdRYfD1NNtGM3MRpA1N9pKB6f",
+    "timestamp": 1754633898,
+    "platform": "pump_fun"
+  },
+  {
+    "mint": "EkaQH4rFSibpAFDA5d9GCE667qnjiyiU9W9hu8H3mKxV",
+    "symbol": "Meta Guy",
+    "name": "Meta Guy",
+    "creator": "62N1K57D37AUDGp68tnDYKPjGDsaAAtmo357nBtEtuR",
+    "bonding_curve": "CqohymZqDvMsWNeA2572x6p28vTFgEyVicQBzHUJN4Um",
+    "associated_bonding_curve": "6529dj6q3NGyohabzxcfn1jKiojtBNtmhriQBpyc8abH",
+    "timestamp": 1754633908,
+    "platform": "pump_fun"
+  }
+]
