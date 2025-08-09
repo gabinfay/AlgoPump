@@ -1,0 +1,112 @@
+{
+  "DCz3ioPUR6czNsV4Y95s4u4aQuTiAmVx1jkdmBWSpump": {
+    "token_info": {
+      "name": "Unknown",
+      "symbol": "UNK",
+      "description": "",
+      "mint": "DCz3ioPUR6czNsV4Y95s4u4aQuTiAmVx1jkdmBWSpump",
+      "creator": "",
+      "uri": "",
+      "platform": "pump_fun",
+      "market_cap_sol": null,
+      "created_timestamp": null,
+      "bonding_curve": null,
+      "associated_bonding_curve": null
+    },
+    "tokens_owned": 35068795004,
+    "sol_invested": 0.001,
+    "entry_price": 2.8515379552845728e-08,
+    "entry_time": 1754719117,
+    "take_profit": null,
+    "stop_loss": null,
+    "max_hold_time": null
+  },
+  "6pm7ZrryYobxT5v2JW519FYVcKAo6KoC1uCvQQPapump": {
+    "token_info": {
+      "name": "Unknown",
+      "symbol": "UNK",
+      "description": "",
+      "mint": "6pm7ZrryYobxT5v2JW519FYVcKAo6KoC1uCvQQPapump",
+      "creator": "",
+      "uri": "",
+      "platform": "pump_fun",
+      "market_cap_sol": null,
+      "created_timestamp": null,
+      "bonding_curve": null,
+      "associated_bonding_curve": null
+    },
+    "tokens_owned": 34614834759,
+    "sol_invested": 0.001,
+    "entry_price": 2.8889347788667285e-08,
+    "entry_time": 1754721359,
+    "take_profit": null,
+    "stop_loss": null,
+    "max_hold_time": null
+  },
+  "2SwH8zrgu9fZyCUhiaHAhbu3a9s8coGMdDDgEjdvpump": {
+    "token_info": {
+      "name": "Unknown",
+      "symbol": "UNK",
+      "description": "",
+      "mint": "2SwH8zrgu9fZyCUhiaHAhbu3a9s8coGMdDDgEjdvpump",
+      "creator": "",
+      "uri": "",
+      "platform": "pump_fun",
+      "market_cap_sol": null,
+      "created_timestamp": null,
+      "bonding_curve": null,
+      "associated_bonding_curve": null
+    },
+    "tokens_owned": 18813190154,
+    "sol_invested": 0.001,
+    "entry_price": 5.315419616844638e-08,
+    "entry_time": 1754721453,
+    "take_profit": null,
+    "stop_loss": null,
+    "max_hold_time": null
+  },
+  "Db8SDrAKrab1TTtBBfhceVpxVMysC7iTBV6bAuCppump": {
+    "token_info": {
+      "name": "Unknown",
+      "symbol": "UNK",
+      "description": "",
+      "mint": "Db8SDrAKrab1TTtBBfhceVpxVMysC7iTBV6bAuCppump",
+      "creator": "",
+      "uri": "",
+      "platform": "pump_fun",
+      "market_cap_sol": null,
+      "created_timestamp": null,
+      "bonding_curve": null,
+      "associated_bonding_curve": null
+    },
+    "tokens_owned": 20097935526,
+    "sol_invested": 0.001,
+    "entry_price": 4.975635426366727e-08,
+    "entry_time": 1754722082,
+    "take_profit": null,
+    "stop_loss": null,
+    "max_hold_time": null
+  },
+  "75nbFdAaQbFUkpvs28NULgKwqb3LvnrNnjiexRjqpump": {
+    "token_info": {
+      "name": "Unknown",
+      "symbol": "UNK",
+      "description": "",
+      "mint": "75nbFdAaQbFUkpvs28NULgKwqb3LvnrNnjiexRjqpump",
+      "creator": "",
+      "uri": "",
+      "platform": "pump_fun",
+      "market_cap_sol": null,
+      "created_timestamp": null,
+      "bonding_curve": null,
+      "associated_bonding_curve": null
+    },
+    "tokens_owned": 11065643689,
+    "sol_invested": 0.001,
+    "entry_price": 9.036979936323702e-08,
+    "entry_time": 1754722152,
+    "take_profit": null,
+    "stop_loss": null,
+    "max_hold_time": null
+  }
+}

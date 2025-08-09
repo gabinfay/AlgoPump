@@ -10,6 +10,8 @@ import sys
 import os
 import base58
 import struct
+import json
+import time
 from typing import Optional, List, Callable, Dict, Any, Tuple
 from datetime import datetime, timedelta
 from dataclasses import dataclass
@@ -208,6 +210,60 @@ class Position:
         
         return False, ""
 
+    def to_dict(self) -> dict:
+        """Convert position to dictionary for JSON serialization."""
+        return {
+            "token_info": {
+                "name": self.token_info.name,
+                "symbol": self.token_info.symbol,
+                "description": self.token_info.description,
+                "mint": self.token_info.mint,
+                "creator": self.token_info.creator,
+                "uri": self.token_info.uri,
+                "platform": self.token_info.platform.value,
+                "market_cap_sol": self.token_info.market_cap_sol,
+                "created_timestamp": self.token_info.created_timestamp,
+                "bonding_curve": self.token_info.bonding_curve,
+                "associated_bonding_curve": self.token_info.associated_bonding_curve
+            },
+            "tokens_owned": self.tokens_owned,
+            "sol_invested": self.sol_invested,
+            "entry_price": self.entry_price,
+            "entry_time": self.entry_time,
+            "take_profit": self.take_profit,
+            "stop_loss": self.stop_loss,
+            "max_hold_time": self.max_hold_time
+        }
+    
+    @classmethod
+    def from_dict(cls, data: dict) -> 'Position':
+        """Create position from dictionary."""
+        token_info_data = data["token_info"]
+        token_info = TokenInfo(
+            name=token_info_data["name"],
+            symbol=token_info_data["symbol"],
+            description=token_info_data["description"],
+            mint=token_info_data["mint"],
+            creator=token_info_data["creator"],
+            uri=token_info_data["uri"],
+            platform=Platform(token_info_data["platform"]),
+            market_cap_sol=token_info_data.get("market_cap_sol"),
+            created_timestamp=token_info_data.get("created_timestamp"),
+            bonding_curve=token_info_data.get("bonding_curve"),
+            associated_bonding_curve=token_info_data.get("associated_bonding_curve")
+        )
+        
+        return cls(
+            token_info=token_info,
+            tokens_owned=data["tokens_owned"],
+            sol_invested=data["sol_invested"],
+            entry_price=data["entry_price"],
+            entry_time=data["entry_time"],
+            take_profit=data.get("take_profit"),
+            stop_loss=data.get("stop_loss"),
+            max_hold_time=data.get("max_hold_time")
+        )
+
 class TradingBotSDK:
     """
     Trading Bot SDK - Simplified interface to pump.fun and other DEX trading.
@@ -254,6 +310,9 @@ class TradingBotSDK:
         self.active_listeners: List[asyncio.Task] = []
         self.positions: Dict[str, Position] = {}
         self.background_listeners: Dict[str, asyncio.Task] = {}
+        
+        # Position tracking file path
+        self.buy_json_path = Path(__file__).parent / "buy.json"
         
     @property
     def wallet_address(self) -> Optional[str]:
@@ -585,10 +644,23 @@ class TradingBotSDK:
                 self.logger.info(f"Buying pre-graduation token via bonding curve")
                 # Ensure client is ready
                 await self.wait_for_client_ready()
-                return await self._buy_token_pumpfun(mint, sol_amount, platform, slippage)
+                result = await self._buy_token_pumpfun(mint, sol_amount, platform, slippage)
             else:
                 self.logger.info(f"Buying post-graduation token via PumpSwap AMM")
-                return await self._buy_token_pumpswap(mint, sol_amount, slippage)
+                result = await self._buy_token_pumpswap(mint, sol_amount, slippage)
+            
+            # Save position if buy was successful
+            if result.success and result.tokens_bought and result.sol_spent:
+                entry_price = result.sol_spent / (result.tokens_bought / 10**6)  # Price per token
+                self.save_buy_position(
+                    mint=mint,
+                    tokens_bought=result.tokens_bought,
+                    sol_spent=result.sol_spent,
+                    entry_price=entry_price,
+                    tx_signature=result.signature or ""
+                )
+            
+            return result
                 
         except Exception as e:
             self.logger.error(f"Buy failed: {e}")
@@ -790,7 +862,7 @@ class TradingBotSDK:
             tx_hash = await self._buy_pump_swap_token(
                 async_client,
                 market_address,
-                self.wallet,
+                self.wallet.keypair,
                 mint_pubkey,
                 Pubkey.from_string(market_data["pool_base_token_account"]),
                 Pubkey.from_string(market_data["pool_quote_token_account"]),
@@ -830,17 +902,17 @@ class TradingBotSDK:
         max_sol_input = int((sol_amount_to_spend * slippage_factor) * 1_000_000_000)
 
         # Get user accounts
-        user_base_token_account = get_associated_token_address(payer.pubkey(), base_mint)
-        user_quote_token_account = get_associated_token_address(payer.pubkey(), SOL_MINT)
+        user_base_token_account = get_associated_token_address(payer.pubkey, base_mint)
+        user_quote_token_account = get_associated_token_address(payer.pubkey, SOL_MINT)
         
         # Calculate required PDAs
         global_volume_accumulator = self._find_global_volume_accumulator()
-        user_volume_accumulator = self._find_user_volume_accumulator(payer.pubkey())
+        user_volume_accumulator = self._find_user_volume_accumulator(payer.pubkey)
 
         # Build transaction accounts
         accounts = [
             AccountMeta(pubkey=market_address, is_signer=False, is_writable=False),
-            AccountMeta(pubkey=payer.pubkey(), is_signer=True, is_writable=True),
+            AccountMeta(pubkey=payer.pubkey, is_signer=True, is_writable=True),
             AccountMeta(pubkey=PUMP_SWAP_GLOBAL_CONFIG, is_signer=False, is_writable=False),
             AccountMeta(pubkey=base_mint, is_signer=False, is_writable=False),
             AccountMeta(pubkey=SOL_MINT, is_signer=False, is_writable=False),
@@ -871,8 +943,8 @@ class TradingBotSDK:
         
         # Create WSOL ATA
         create_wsol_ata_ix = create_idempotent_associated_token_account(
-            payer.pubkey(),
-            payer.pubkey(),
+            payer.pubkey,
+            payer.pubkey,
             SOL_MINT,
             SYSTEM_TOKEN_PROGRAM
         )
@@ -884,7 +956,7 @@ class TradingBotSDK:
         # Transfer and wrap SOL
         transfer_sol_ix = transfer(
             TransferParams(
-                from_pubkey=payer.pubkey(),
+                from_pubkey=payer.pubkey,
                 to_pubkey=user_quote_token_account,
                 lamports=wrap_amount
             )
@@ -896,8 +968,8 @@ class TradingBotSDK:
         
         # Create token ATA
         idempotent_ata_ix = create_idempotent_associated_token_account(
-            payer.pubkey(),
-            payer.pubkey(),
+            payer.pubkey,
+            payer.pubkey,
             base_mint,
             SYSTEM_TOKEN_PROGRAM
         )
@@ -911,7 +983,7 @@ class TradingBotSDK:
 
         msg = Message.new_with_blockhash(
             [compute_limit_ix, compute_price_ix, create_wsol_ata_ix, transfer_sol_ix, sync_native_ix, idempotent_ata_ix, buy_ix],
-            payer.pubkey(),
+            payer.pubkey,
             recent_blockhash
         )
 
@@ -1059,8 +1131,8 @@ class TradingBotSDK:
     ) -> str:
         """Sell tokens on the PUMP AMM with slippage protection."""
         # Get user accounts
-        user_base_token_account = get_associated_token_address(payer.pubkey(), base_mint)
-        user_quote_token_account = get_associated_token_address(payer.pubkey(), SOL_MINT)
+        user_base_token_account = get_associated_token_address(payer.pubkey, base_mint)
+        user_quote_token_account = get_associated_token_address(payer.pubkey, SOL_MINT)
         
         # Get token balance
         try:
@@ -1085,7 +1157,7 @@ class TradingBotSDK:
         # Build transaction accounts
         accounts = [
             AccountMeta(pubkey=market_address, is_signer=False, is_writable=False),
-            AccountMeta(pubkey=payer.pubkey(), is_signer=True, is_writable=True),
+            AccountMeta(pubkey=payer.pubkey, is_signer=True, is_writable=True),
             AccountMeta(pubkey=PUMP_SWAP_GLOBAL_CONFIG, is_signer=False, is_writable=False),
             AccountMeta(pubkey=base_mint, is_signer=False, is_writable=False),
             AccountMeta(pubkey=SOL_MINT, is_signer=False, is_writable=False),
@@ -1114,8 +1186,8 @@ class TradingBotSDK:
         
         # Create WSOL ATA (in case it doesn't exist)
         create_wsol_ata_ix = create_idempotent_associated_token_account(
-            payer.pubkey(),
-            payer.pubkey(),
+            payer.pubkey,
+            payer.pubkey,
             SOL_MINT,
             SYSTEM_TOKEN_PROGRAM
         )
@@ -1129,7 +1201,7 @@ class TradingBotSDK:
 
         msg = Message.new_with_blockhash(
             [compute_limit_ix, compute_price_ix, create_wsol_ata_ix, sell_ix],
-            payer.pubkey(),
+            payer.pubkey,
             recent_blockhash
         )
 
@@ -1213,6 +1285,96 @@ class TradingBotSDK:
         for task in self.active_listeners:
             task.cancel()
         self.active_listeners.clear()
+    
+    def _load_positions(self) -> Dict[str, Position]:
+        """Load positions from buy.json file."""
+        if not self.buy_json_path.exists():
+            return {}
+        
+        try:
+            with open(self.buy_json_path, 'r') as f:
+                data = json.load(f)
+            
+            positions = {}
+            for mint, position_data in data.items():
+                positions[mint] = Position.from_dict(position_data)
+            
+            return positions
+        except Exception as e:
+            self.logger.error(f"Error loading positions: {e}")
+            return {}
+    
+    def _save_positions(self, positions: Dict[str, Position]) -> None:
+        """Save positions to buy.json file."""
+        try:
+            data = {}
+            for mint, position in positions.items():
+                data[mint] = position.to_dict()
+            
+            with open(self.buy_json_path, 'w') as f:
+                json.dump(data, f, indent=2)
+                
+        except Exception as e:
+            self.logger.error(f"Error saving positions: {e}")
+    
+    def save_buy_position(
+        self,
+        mint: str,
+        tokens_bought: int,
+        sol_spent: float,
+        entry_price: float,
+        tx_signature: str
+    ) -> None:
+        """Save a buy position to the buy.json file."""
+        try:
+            # Load existing positions
+            positions = self._load_positions()
+            
+            # Create token info (minimal for now)
+            token_info = TokenInfo(
+                name="Unknown",
+                symbol="UNK",
+                description="",
+                mint=mint,
+                creator="",
+                uri="",
+                platform=Platform.PUMP_FUN
+            )
+            
+            # Create position
+            position = Position(
+                token_info=token_info,
+                tokens_owned=tokens_bought,
+                sol_invested=sol_spent,
+                entry_price=entry_price,
+                entry_time=int(time.time())
+            )
+            
+            # Add to positions
+            positions[mint] = position
+            
+            # Save to file
+            self._save_positions(positions)
+            
+            self.logger.info(f"Saved position for {mint}: {tokens_bought} tokens, {sol_spent} SOL spent")
+            
+        except Exception as e:
+            self.logger.error(f"Error saving buy position: {e}")
+    
+    def get_current_positions(self) -> Dict[str, Position]:
+        """Get all current positions from buy.json."""
+        return self._load_positions()
+    
+    def remove_position(self, mint: str) -> None:
+        """Remove a position from buy.json (after selling)."""
+        try:
+            positions = self._load_positions()
+            if mint in positions:
+                del positions[mint]
+                self._save_positions(positions)
+                self.logger.info(f"Removed position for {mint}")
+        except Exception as e:
+            self.logger.error(f"Error removing position: {e}")
     
     async def close(self) -> None:
         """Clean up and close SDK resources."""
@@ -1536,13 +1698,13 @@ async def read_logged_tokens(log_file: str = "new_tokens.json", hours_ago: int =
         return f"Error reading log file: {str(e)}"
 
 @mcp.tool()
-async def analyze_logged_tokens_bonding_curves(log_file: str = "new_tokens.json", hours_ago: int = 1, max_tokens: int = 10) -> str:
-    """Analyze bonding curves of recently logged tokens to find the best trading opportunities.
+async def analyze_logged_tokens_bonding_curves(log_file: str = "new_tokens.json", since_last_scan: bool = True, hours_ago: int = 1) -> str:
+    """Analyze bonding curves of logged tokens to find the best trading opportunities.
     
     Args:
         log_file: JSON file to read tokens from (default "new_tokens.json")
-        hours_ago: Only analyze tokens created within this many hours (default 1)
-        max_tokens: Maximum number of tokens to analyze (default 10)
+        since_last_scan: If True, analyze all tokens since last scan. If False, use hours_ago (default True)
+        hours_ago: Only analyze tokens within this many hours if since_last_scan=False (default 1)
     """
     import json
     import time
@@ -1555,18 +1717,35 @@ async def analyze_logged_tokens_bonding_curves(log_file: str = "new_tokens.json"
         return f"Log file {log_file} does not exist"
     
     try:
+        # Load last scan timestamp
+        script_dir = Path(__file__).parent
+        scan_timestamp_file = script_dir / "last_scan.json"
+        last_scan_time = 0
+        
+        if since_last_scan and scan_timestamp_file.exists():
+            try:
+                with open(scan_timestamp_file, 'r') as f:
+                    scan_data = json.load(f)
+                    last_scan_time = scan_data.get('last_scan_timestamp', 0)
+            except:
+                last_scan_time = 0
+        
         with open(log_path, 'r') as f:
             all_tokens = json.load(f)
         
-        # Filter tokens by time
-        cutoff_time = int(time.time()) - (hours_ago * 3600)
-        recent_tokens = [t for t in all_tokens if t.get('timestamp', 0) > cutoff_time]
+        # Filter tokens by time based on mode
+        if since_last_scan:
+            # Analyze all tokens since last scan
+            tokens_to_analyze = [t for t in all_tokens if t.get('timestamp', 0) > last_scan_time]
+            time_desc = f"since last scan ({len(tokens_to_analyze)} new tokens)"
+        else:
+            # Use hours_ago filter
+            cutoff_time = int(time.time()) - (hours_ago * 3600)
+            tokens_to_analyze = [t for t in all_tokens if t.get('timestamp', 0) > cutoff_time]
+            time_desc = f"in the last {hours_ago} hours"
         
-        if not recent_tokens:
-            return f"No tokens found in the last {hours_ago} hours"
-        
-        # Limit the number of tokens to analyze
-        tokens_to_analyze = recent_tokens[:max_tokens]
+        if not tokens_to_analyze:
+            return f"No tokens found {time_desc}"
         
         sdk = await get_sdk()
         token_analysis = []
@@ -1597,9 +1776,19 @@ async def analyze_logged_tokens_bonding_curves(log_file: str = "new_tokens.json"
         # Sort by SOL reserves (highest first)
         token_analysis.sort(key=lambda x: x['sol_reserves'], reverse=True)
         
-        # Format results
+        # Save current scan timestamp
+        if since_last_scan:
+            try:
+                current_time = int(time.time())
+                with open(scan_timestamp_file, 'w') as f:
+                    json.dump({'last_scan_timestamp': current_time}, f)
+            except:
+                pass  # Don't fail if we can't save timestamp
+        
+        # Format results - show more tokens since we're analyzing all new ones
         results = []
-        for i, analysis in enumerate(token_analysis[:5], 1):  # Top 5 results
+        display_count = min(len(token_analysis), 10)  # Show up to 10 results
+        for i, analysis in enumerate(token_analysis[:display_count], 1):
             results.append(
                 f"{i}. {analysis['symbol']} ({analysis['mint'][:8]}...)\n"
                 f"   SOL Reserves: {analysis['sol_reserves']:.4f} SOL\n"
@@ -1612,19 +1801,23 @@ async def analyze_logged_tokens_bonding_curves(log_file: str = "new_tokens.json"
         best_token = token_analysis[0]
         recommendation = f"\n🎯 RECOMMENDED: {best_token['symbol']} ({best_token['mint']}) with {best_token['sol_reserves']:.4f} SOL reserves"
         
-        return f"Analyzed {len(token_analysis)} tokens:\n\n" + "\n\n".join(results) + recommendation
+        summary = f"Analyzed {len(token_analysis)} tokens {time_desc}"
+        if len(token_analysis) > display_count:
+            summary += f" (showing top {display_count})"
+        
+        return summary + ":\n\n" + "\n\n".join(results) + recommendation
         
     except Exception as e:
         return f"Error analyzing tokens: {str(e)}"
 
 @mcp.tool()
-async def execute_trading_strategy(hours_ago: int = 1, buy_amount: float = 0.001, max_tokens_to_analyze: int = 10) -> str:
-    """Execute the full trading strategy: analyze recent tokens and buy the best one.
+async def execute_trading_strategy(since_last_scan: bool = True, hours_ago: int = 1, buy_amount: float = 0.001) -> str:
+    """Execute the full trading strategy: analyze tokens since last scan and buy the best one.
     
     Args:
-        hours_ago: Only consider tokens created within this many hours (default 1)
+        since_last_scan: If True, analyze all tokens since last scan. If False, use hours_ago (default True)
+        hours_ago: Only consider tokens within this many hours if since_last_scan=False (default 1)
         buy_amount: Amount of SOL to spend on the selected token (default 0.001)
-        max_tokens_to_analyze: Maximum number of tokens to analyze (default 10)
     """
     import json
     import time
@@ -1639,17 +1832,35 @@ async def execute_trading_strategy(hours_ago: int = 1, buy_amount: float = 0.001
         return f"No token log file found. Run start_token_listener_with_logging first."
     
     try:
+        # Load last scan timestamp
+        scan_timestamp_file = script_dir / "last_scan.json"
+        last_scan_time = 0
+        
+        if since_last_scan and scan_timestamp_file.exists():
+            try:
+                with open(scan_timestamp_file, 'r') as f:
+                    scan_data = json.load(f)
+                    last_scan_time = scan_data.get('last_scan_timestamp', 0)
+            except:
+                last_scan_time = 0
+        
         # Read and filter tokens
         with open(log_path, 'r') as f:
             all_tokens = json.load(f)
         
-        cutoff_time = int(time.time()) - (hours_ago * 3600)
-        recent_tokens = [t for t in all_tokens if t.get('timestamp', 0) > cutoff_time]
+        # Filter tokens by time based on mode
+        if since_last_scan:
+            # Analyze all tokens since last scan
+            tokens_to_analyze = [t for t in all_tokens if t.get('timestamp', 0) > last_scan_time]
+            time_desc = f"since last scan ({len(tokens_to_analyze)} new tokens)"
+        else:
+            # Use hours_ago filter
+            cutoff_time = int(time.time()) - (hours_ago * 3600)
+            tokens_to_analyze = [t for t in all_tokens if t.get('timestamp', 0) > cutoff_time]
+            time_desc = f"in the last {hours_ago} hours"
         
-        if not recent_tokens:
-            return f"No tokens found in the last {hours_ago} hours to analyze"
-        
-        tokens_to_analyze = recent_tokens[:max_tokens_to_analyze]
+        if not tokens_to_analyze:
+            return f"No tokens found {time_desc} to analyze"
         sdk = await get_sdk()
         
         # Analyze bonding curves
@@ -1683,9 +1894,18 @@ async def execute_trading_strategy(hours_ago: int = 1, buy_amount: float = 0.001
         # Execute buy
         result = await sdk.buy_token(best_token['mint'], buy_amount, Platform.PUMP_FUN, 0.05)
         
+        # Update scan timestamp after successful analysis
+        if since_last_scan:
+            try:
+                current_time = int(time.time())
+                with open(scan_timestamp_file, 'w') as f:
+                    json.dump({'last_scan_timestamp': current_time}, f)
+            except:
+                pass  # Don't fail if we can't save timestamp
+        
         strategy_summary = (
             f"📊 STRATEGY EXECUTION SUMMARY:\n"
-            f"Analyzed {len(tokens_to_analyze)} recent tokens\n"
+            f"Analyzed {len(tokens_to_analyze)} tokens {time_desc}\n"
             f"Found {len(valid_tokens)} valid trading candidates\n"
             f"Selected: {best_token['symbol']} ({best_token['mint'][:8]}...)\n"
             f"SOL Reserves: {best_token['sol_reserves']:.4f} SOL\n"
@@ -1706,6 +1926,85 @@ async def execute_trading_strategy(hours_ago: int = 1, buy_amount: float = 0.001
             
     except Exception as e:
         return f"Error executing trading strategy: {str(e)}"
+
+@mcp.tool()
+async def get_current_positions() -> str:
+    """Get all current positions from buy.json file with live P&L analysis.
+    
+    Returns a summary of all held positions including current prices, P&L, and exit recommendations.
+    """
+    try:
+        sdk = await get_sdk()
+        positions = sdk.get_current_positions()
+        
+        if not positions:
+            return "No current positions found. Buy some tokens first!"
+        
+        results = []
+        total_invested = 0.0
+        total_current_value = 0.0
+        
+        for mint, position in positions.items():
+            try:
+                # Get current price
+                current_price = await sdk.get_token_price(mint, Platform.PUMP_FUN)
+                
+                # Calculate P&L
+                pnl = position.calculate_pnl(current_price)
+                pnl_percentage = (pnl / position.sol_invested) * 100 if position.sol_invested > 0 else 0
+                
+                # Check if should exit
+                should_exit, exit_reason = position.should_exit(current_price)
+                
+                # Calculate current value
+                current_value = (position.tokens_owned / 10**6) * current_price
+                
+                total_invested += position.sol_invested
+                total_current_value += current_value
+                
+                # Calculate age
+                age_hours = (time.time() - position.entry_time) / 3600
+                
+                # Format position info
+                position_info = (
+                    f"🪙 {position.token_info.symbol} ({mint[:8]}...)\n"
+                    f"   Tokens: {position.tokens_owned / 10**6:.6f}\n"
+                    f"   Entry Price: {position.entry_price:.10f} SOL\n"
+                    f"   Current Price: {current_price:.10f} SOL\n"
+                    f"   Invested: {position.sol_invested:.6f} SOL\n"
+                    f"   Current Value: {current_value:.6f} SOL\n"
+                    f"   P&L: {pnl:.6f} SOL ({pnl_percentage:+.2f}%)\n"
+                    f"   Age: {age_hours:.1f} hours\n"
+                    f"   Exit Signal: {'🚨 ' + exit_reason.upper() if should_exit else '✅ HOLD'}"
+                )
+                
+                results.append(position_info)
+                
+            except Exception as e:
+                # If we can't get current price, still show the position
+                results.append(
+                    f"❌ {position.token_info.symbol} ({mint[:8]}...)\n"
+                    f"   Tokens: {position.tokens_owned / 10**6:.6f}\n"
+                    f"   Invested: {position.sol_invested:.6f} SOL\n"
+                    f"   Error: {str(e)}"
+                )
+        
+        # Portfolio summary
+        total_pnl = total_current_value - total_invested
+        total_pnl_percentage = (total_pnl / total_invested) * 100 if total_invested > 0 else 0
+        
+        summary = (
+            f"📊 PORTFOLIO SUMMARY\n"
+            f"Total Positions: {len(positions)}\n"
+            f"Total Invested: {total_invested:.6f} SOL\n"
+            f"Current Value: {total_current_value:.6f} SOL\n"
+            f"Total P&L: {total_pnl:.6f} SOL ({total_pnl_percentage:+.2f}%)\n\n"
+        )
+        
+        return summary + "\n\n".join(results)
+        
+    except Exception as e:
+        return f"Error getting current positions: {str(e)}"
 
 
 if __name__ == "__main__":
