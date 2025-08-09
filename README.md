@@ -1,5 +1,7 @@
 # PumpFun Trading Bot MCP Server
 
+<video src="recording_algopump_mcp.mp4" width="800" autoplay loop muted></video>
+
 A complete MCP (Model Context Protocol) server for automated pump.fun token trading with support for both pre-graduation (bonding curve) and post-graduation (PumpSwap AMM) tokens.
 
 ## Features
@@ -19,18 +21,23 @@ A complete MCP (Model Context Protocol) server for automated pump.fun token trad
 git clone https://github.com/gabinfay/AlgoPump
 cd claude-code-mcp-pump
 
-# Create virtual environment in pump-fun-bot directory
+# Set up the pump-fun-bot environment
 cd pump-fun-bot
-python -m venv .venv
+
+# Install uv (fast Python package manager)
+# Visit https://github.com/astral-sh/uv for installation instructions
+
+# Create and activate virtual environment
+uv sync
 source .venv/bin/activate
 
-# Install dependencies
-pip install -r requirements.txt  # or use uv/poetry based on what's in pump-fun-bot
+# Install the bot as a package
+uv pip install -e .
 ```
 
 ### 2. Configure Environment Variables
 
-Create a `.env` file in the root directory:
+Create a `.env` file in the root directory (claude-code-mcp-pump/):
 
 ```bash
 # Solana RPC Configuration
@@ -73,7 +80,8 @@ Add this configuration to your MCP client settings (e.g., `~/.cursor/mcp.json` f
 ### 4. Test the Setup
 
 ```bash
-# Test the MCP server directly
+# Test the MCP server directly (from the root directory)
+cd ..  # Go back to claude-code-mcp-pump root
 python trading_bot_sdk.py
 
 # Should show FastMCP startup message
