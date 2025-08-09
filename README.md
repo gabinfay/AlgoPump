@@ -1,6 +1,6 @@
 # PumpFun Trading Bot MCP Server
 
-[![Watch the video](https://img.youtube.com/vi/y1QdbXsHi2w/0.jpg)](https://youtu.be/y1QdbXsHi2w)
+<video src="recording_algopump_mcp_small.mp4" width="800" autoplay loop muted></video>
 
 A complete MCP (Model Context Protocol) server for automated pump.fun token trading with support for both pre-graduation (bonding curve) and post-graduation (PumpSwap AMM) tokens.
 
