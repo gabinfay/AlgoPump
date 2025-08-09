@@ -304,14 +304,26 @@ class TradingBotSDK:
         """Derive bonding curve address for a token."""
         from solders.pubkey import Pubkey
         
-        base_platform = BasePlatform.PUMP_FUN if platform == Platform.PUMP_FUN else BasePlatform.LETS_BONK
-        implementations = get_platform_implementations(base_platform, self.client)
-        
-        mint_pubkey = Pubkey.from_string(mint)
-        # Use derive_pool_address as that's the bonding curve for pump.fun
-        curve_address = implementations.address_provider.derive_pool_address(mint_pubkey)
-        
-        return str(curve_address)
+        if platform == Platform.PUMP_FUN:
+            # For pump.fun, use the standard PDA derivation
+            mint_pubkey = Pubkey.from_string(mint)
+            PUMP_PROGRAM = Pubkey.from_string("6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P")
+            
+            # Standard pump.fun bonding curve PDA
+            bonding_curve, _ = Pubkey.find_program_address(
+                [b"bonding-curve", bytes(mint_pubkey)],
+                PUMP_PROGRAM
+            )
+            return str(bonding_curve)
+        else:
+            # For other platforms, use the existing method
+            base_platform = BasePlatform.PUMP_FUN if platform == Platform.PUMP_FUN else BasePlatform.LETS_BONK
+            implementations = get_platform_implementations(base_platform, self.client)
+            
+            mint_pubkey = Pubkey.from_string(mint)
+            curve_address = implementations.address_provider.derive_pool_address(mint_pubkey)
+            
+            return str(curve_address)
     
     def derive_associated_bonding_curve_address(self, mint: str, platform: Platform) -> str:
         """Derive associated bonding curve address for a token."""
@@ -426,12 +438,30 @@ class TradingBotSDK:
     async def _get_pumpswap_market_address(self, client: AsyncClient, base_mint: Pubkey) -> Pubkey:
         """Find the PumpSwap AMM market address for a given token mint."""
         try:
-            all_response = await client.get_program_accounts(PUMP_AMM_PROGRAM_ID, encoding="base64")
+            self.logger.debug(f"Fetching all PumpSwap AMM accounts for mint: {base_mint}")
+            
+            # Add timeout and filters to make the RPC call more efficient
+            import asyncio
+            
+            # Try with a longer timeout (no filters for now due to compatibility issues)
+            try:
+                all_response = await asyncio.wait_for(
+                    client.get_program_accounts(
+                        PUMP_AMM_PROGRAM_ID, 
+                        encoding="base64"
+                        # Skip filters for now due to compatibility issues with solders library
+                    ),
+                    timeout=120.0  # Increase timeout to 2 minutes
+                )
+            except asyncio.TimeoutError:
+                raise ValueError("Timeout while fetching PumpSwap markets - RPC may be overloaded")
             
             if not all_response.value:
                 raise ValueError("No AMM accounts returned from RPC")
+            
+            self.logger.debug(f"Found {len(all_response.value)} AMM accounts to search")
 
-            for account in all_response.value:
+            for i, account in enumerate(all_response.value):
                 try:
                     data = account.account.data
                     if len(data) > 75:
@@ -439,8 +469,10 @@ class TradingBotSDK:
                         potential_mint = Pubkey.from_bytes(potential_mint_bytes)
                         
                         if potential_mint == base_mint:
+                            self.logger.debug(f"Found matching market at index {i}: {account.pubkey}")
                             return account.pubkey
-                except Exception:
+                except Exception as e:
+                    self.logger.debug(f"Error processing account {i}: {e}")
                     continue
                     
         except Exception as e:
@@ -572,40 +604,153 @@ class TradingBotSDK:
         platform: Platform,
         slippage: float
     ) -> TradeResult:
-        """Buy token using pump.fun bonding curve."""
-        # Derive addresses needed for trading
-        bonding_curve_addr = self.derive_bonding_curve_address(mint, platform)
-        assoc_bonding_curve_addr = self.derive_associated_bonding_curve_address(mint, platform)
-        
-        # Create TokenInfo with proper addresses
-        token_info = TokenInfo(
-            name="Unknown",
-            symbol="UNK",
-            description="Token for trading",
-            mint=mint,
-            creator="11111111111111111111111111111111",
-            uri="",
-            platform=platform,
-            bonding_curve=bonding_curve_addr,
-            associated_bonding_curve=assoc_bonding_curve_addr
-        )
-        
-        # Convert to base token info
-        base_token_info = token_info.to_base_token_info()
-        
-        # Create buyer
-        buyer = PlatformAwareBuyer(
-            client=self.client,
-            wallet=self.wallet,
-            priority_fee_manager=self.priority_fee_manager,
-            amount=sol_amount,
-            slippage=slippage,
-            max_retries=3,
-        )
-        
-        # Execute buy
-        result = await buyer.execute(base_token_info)
-        return TradeResult.from_base_trade_result(result)
+        """Buy token using pump.fun bonding curve (manual implementation)."""
+        try:
+            self.logger.debug(f"Starting _buy_token_pumpfun for {mint}")
+            from solders.pubkey import Pubkey
+            mint_pubkey = Pubkey.from_string(mint)
+            
+            # Constants
+            PUMP_PROGRAM = Pubkey.from_string("6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P")
+            PUMP_GLOBAL = Pubkey.from_string("4wTV1YmiEkRvAtNtsSGPtUrqRYQMe5SKy2uB4Jjaxnjf")
+            PUMP_EVENT_AUTHORITY = Pubkey.from_string("Ce6TQqeHC9p8KetsN6JsjHK7UTZk7nasjjnr7XxXp9F1")
+            PUMP_FEE = Pubkey.from_string("CebN5WGQ4jvEPvsVU4EoHEpgzq1VV7AbicfhtW4xC9iM")
+            BUY_DISCRIMINATOR = struct.pack("<Q", 16927863322537952870)
+            
+            # Derive bonding curve addresses
+            bonding_curve, _ = Pubkey.find_program_address(
+                [b"bonding-curve", bytes(mint_pubkey)],
+                PUMP_PROGRAM
+            )
+            associated_bonding_curve = get_associated_token_address(bonding_curve, mint_pubkey)
+            
+            self.logger.debug(f"Bonding curve: {bonding_curve}")
+            self.logger.debug(f"Associated bonding curve: {associated_bonding_curve}")
+            
+            # Get async client
+            async_client = await self.client.get_client()
+            
+            # Get curve state to find creator
+            self.logger.debug("Getting bonding curve state...")
+            curve_response = await async_client.get_account_info(bonding_curve, encoding="base64")
+            if not curve_response.value or not curve_response.value.data:
+                raise ValueError("Bonding curve account not found")
+            
+            # Parse curve data to get creator
+            curve_data = curve_response.value.data
+            # Skip discriminator (8 bytes) + reserves (32 bytes) + supply (8 bytes) + complete (1 byte)
+            creator_offset = 8 + 8 + 8 + 8 + 8 + 8 + 1
+            creator_bytes = curve_data[creator_offset:creator_offset + 32]
+            creator = Pubkey.from_bytes(creator_bytes)
+            
+            # Derive creator vault
+            creator_vault, _ = Pubkey.find_program_address(
+                [b"creator-vault", bytes(creator)],
+                PUMP_PROGRAM
+            )
+            
+            # Derive volume accumulators
+            global_volume, _ = Pubkey.find_program_address(
+                [b"global_volume_accumulator"],
+                PUMP_PROGRAM
+            )
+            user_volume, _ = Pubkey.find_program_address(
+                [b"user_volume_accumulator", bytes(self.wallet.pubkey)],
+                PUMP_PROGRAM
+            )
+            
+            # Calculate token amount
+            # Parse virtual reserves from curve data
+            virtual_token_reserves = int.from_bytes(curve_data[8:16], 'little')
+            virtual_sol_reserves = int.from_bytes(curve_data[16:24], 'little')
+            
+            if virtual_token_reserves <= 0 or virtual_sol_reserves <= 0:
+                raise ValueError("Invalid bonding curve reserves")
+            
+            # Calculate price and token amount
+            token_price_sol = (virtual_sol_reserves / 1_000_000_000) / (virtual_token_reserves / 10**6)
+            token_amount = sol_amount / token_price_sol
+            
+            self.logger.debug(f"Token price: {token_price_sol:.10f} SOL")
+            self.logger.debug(f"Expected tokens: {token_amount:.2f}")
+            
+            # Get user's associated token account
+            user_ata = get_associated_token_address(self.wallet.pubkey, mint_pubkey)
+            
+            # Convert amounts
+            amount_lamports = int(sol_amount * 1_000_000_000)
+            max_amount_lamports = int(amount_lamports * (1 + slippage))
+            
+            # Build accounts
+            accounts = [
+                AccountMeta(pubkey=PUMP_GLOBAL, is_signer=False, is_writable=False),
+                AccountMeta(pubkey=PUMP_FEE, is_signer=False, is_writable=True),
+                AccountMeta(pubkey=mint_pubkey, is_signer=False, is_writable=False),
+                AccountMeta(pubkey=bonding_curve, is_signer=False, is_writable=True),
+                AccountMeta(pubkey=associated_bonding_curve, is_signer=False, is_writable=True),
+                AccountMeta(pubkey=user_ata, is_signer=False, is_writable=True),
+                AccountMeta(pubkey=self.wallet.pubkey, is_signer=True, is_writable=True),
+                AccountMeta(pubkey=SYSTEM_PROGRAM, is_signer=False, is_writable=False),
+                AccountMeta(pubkey=SYSTEM_TOKEN_PROGRAM, is_signer=False, is_writable=False),
+                AccountMeta(pubkey=creator_vault, is_signer=False, is_writable=True),
+                AccountMeta(pubkey=PUMP_EVENT_AUTHORITY, is_signer=False, is_writable=False),
+                AccountMeta(pubkey=PUMP_PROGRAM, is_signer=False, is_writable=False),
+                AccountMeta(pubkey=global_volume, is_signer=False, is_writable=True),
+                AccountMeta(pubkey=user_volume, is_signer=False, is_writable=True),
+            ]
+            
+            # Build instruction data
+            data = (
+                BUY_DISCRIMINATOR +
+                struct.pack("<Q", int(token_amount * 10**6)) +
+                struct.pack("<Q", max_amount_lamports)
+            )
+            
+            # Create instructions
+            buy_ix = Instruction(PUMP_PROGRAM, data, accounts)
+            idempotent_ata_ix = create_idempotent_associated_token_account(
+                self.wallet.pubkey, self.wallet.pubkey, mint_pubkey
+            )
+            
+            # Build transaction
+            blockhash_resp = await async_client.get_latest_blockhash()
+            
+            msg = Message.new_with_blockhash(
+                [
+                    set_compute_unit_limit(300_000),
+                    set_compute_unit_price(10_000),
+                    idempotent_ata_ix,
+                    buy_ix
+                ],
+                self.wallet.pubkey,
+                blockhash_resp.value.blockhash
+            )
+            
+            tx = VersionedTransaction(message=msg, keypairs=[self.wallet.keypair])
+            
+            # Send transaction
+            self.logger.debug("Sending transaction...")
+            result = await async_client.send_transaction(
+                tx,
+                opts=TxOpts(skip_preflight=True, preflight_commitment=Confirmed)
+            )
+            
+            tx_hash = result.value
+            self.logger.debug(f"Transaction sent: {tx_hash}")
+            
+            # Confirm
+            await async_client.confirm_transaction(tx_hash, commitment="confirmed")
+            
+            return TradeResult(
+                success=True,
+                signature=str(tx_hash),
+                tokens_bought=int(token_amount * 10**6),
+                sol_spent=sol_amount
+            )
+            
+        except Exception as e:
+            self.logger.error(f"Error in _buy_token_pumpfun: {e}", exc_info=True)
+            return TradeResult(success=False, error=str(e))
 
     async def _buy_token_pumpswap(
         self,
@@ -615,22 +760,33 @@ class TradingBotSDK:
     ) -> TradeResult:
         """Buy tokens using PumpSwap AMM (post-graduation only)."""
         try:
+            self.logger.debug(f"Starting _buy_token_pumpswap for {mint}")
             from solders.pubkey import Pubkey
             mint_pubkey = Pubkey.from_string(mint)
             
+            self.logger.debug("Getting async client...")
             async_client = await self.client.get_client()
             
             # Get market data
+            self.logger.debug("Searching for PumpSwap market address...")
             market_address = await self._get_pumpswap_market_address(async_client, mint_pubkey)
+            self.logger.debug(f"Found market address: {market_address}")
+            
+            self.logger.debug("Getting market data...")
             market_data = await self._get_pumpswap_market_data(async_client, market_address)
+            self.logger.debug(f"Market data retrieved: {list(market_data.keys())}")
             
             # Calculate required addresses
+            self.logger.debug("Calculating required addresses...")
             coin_creator_vault_authority = self._find_coin_creator_vault(
                 Pubkey.from_string(market_data["coin_creator"])
             )
             coin_creator_vault_ata = get_associated_token_address(coin_creator_vault_authority, SOL_MINT)
+            self.logger.debug(f"Coin creator vault authority: {coin_creator_vault_authority}")
+            self.logger.debug(f"Coin creator vault ATA: {coin_creator_vault_ata}")
             
             # Use the working buy function
+            self.logger.debug(f"Calling _buy_pump_swap_token with sol_amount={sol_amount}, slippage={slippage}")
             tx_hash = await self._buy_pump_swap_token(
                 async_client,
                 market_address,
@@ -644,9 +800,11 @@ class TradingBotSDK:
                 slippage
             )
             
+            self.logger.debug(f"Transaction completed with hash: {tx_hash}")
             return TradeResult(success=True, signature=tx_hash)
             
         except Exception as e:
+            self.logger.error(f"Error in _buy_token_pumpswap: {e}", exc_info=True)
             return TradeResult(success=False, error=str(e))
 
     async def _buy_pump_swap_token(

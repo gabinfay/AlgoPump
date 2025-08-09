@@ -1,9 +1,3 @@
-<img width="1200" alt="Labs" src="https://user-images.githubusercontent.com/99700157/213291931-5a822628-5b8a-4768-980d-65f324985d32.png">
-
-<p>
- <h3 align="center">Chainstack is the leading suite of services connecting developers with Web3 infrastructure</h3>
-</p>
-
 <p align="center">
   • <a target="_blank" href="https://chainstack.com/">Homepage</a> •
   <a target="_blank" href="https://chainstack.com/protocols/">Supported protocols</a> •
