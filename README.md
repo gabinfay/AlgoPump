@@ -4,6 +4,8 @@
 
 A complete MCP (Model Context Protocol) server for automated pump.fun token trading with support for both pre-graduation (bonding curve) and post-graduation (PumpSwap AMM) tokens.
 
+[📹 Demo](https://github.com/gabinfay/AlgoPump/raw/main/recording_algopump_mcp_small.mp4)
+
 ## Features
 
 - **Universal Trading**: Automatically detects pre/post graduation tokens and uses appropriate trading method
